@@ -224,3 +224,6 @@ application/zip zip
 
 # PDF
 application/pdf pdf
+
+# DICOM
+application/dicom dicom

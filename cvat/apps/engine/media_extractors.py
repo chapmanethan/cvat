@@ -210,6 +210,48 @@ class ZipReader(ImageListReader):
         if not self.extract_dir:
             os.remove(self._zip_source.filename)
 
+class DicomReader(ImageListReader):
+    def __init__(self, source_path, step=1, start=0, stop=None):
+        if not source_path:
+            raise Exception('No DICOM found')
+
+        self._tmp_dir = os.path.dirname(source_path[0])
+        os.makedirs(self._tmp_dir, exist_ok=True)
+
+        import pydicom
+
+        paths = []
+        for source in source_path:
+
+            dcm = pydicom.read_file(source)
+            img = self._normalize_image(dcm.pixel_array)
+            pilImg = Image.fromarray(img)
+            #self._dimensions.append(pilImg.size)
+            idx = str(dcm.InstanceNumber).zfill(len(str(len(source_path))))
+            filename = f'{idx}.jpg'
+            jpeg_source_path = os.path.join(self._tmp_dir, filename)
+            paths.append(jpeg_source_path)
+            pilImg.save(jpeg_source_path, 'JPEG')
+            os.remove(source)
+
+        paths = sorted(paths)
+
+        super().__init__(
+            source_path=paths,
+            step=step,
+            start=start,
+            stop=stop,
+        )
+
+    def _normalize_image(self, img, min_percent=0, max_percent=99, gamma=1.2):
+        vmin = np.percentile(img, min_percent)
+        vmax = np.percentile(img, max_percent)
+        img = ((img - vmin) / (vmax - vmin))
+        img[img < 0] = 0
+        img = pow(img, gamma) * 255
+        img = np.clip(img, 0, 255)
+        return img.astype(np.uint8)
+
 class VideoReader(IMediaReader):
     def __init__(self, source_path, step=1, start=0, stop=None):
         super().__init__(
@@ -465,6 +507,10 @@ def _is_zip(path):
     supportedArchives = ['application/zip']
     return mime_type in supportedArchives or encoding in supportedArchives
 
+def _is_dicom(path):
+    mime = mimetypes.guess_type(path)
+    return mime[0] == 'application/dicom'
+
 # 'has_mime_type': function receives 1 argument - path to file.
 #                  Should return True if file has specified media type.
 # 'extractor': class that extracts images from specified media.
@@ -509,5 +555,11 @@ MEDIA_TYPES = {
         'extractor': ZipReader,
         'mode': 'annotation',
         'unique': True,
-    }
+    },
+    'dicom': {
+        'has_mime_type': _is_dicom,
+        'extractor': DicomReader,
+        'mode': 'annotation',
+        'unique': False,
+    },
 }
